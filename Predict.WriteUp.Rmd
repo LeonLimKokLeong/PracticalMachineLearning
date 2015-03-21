@@ -1,0 +1,181 @@
+---
+title: "Practical Machine Learning: Prediction Assignment Writeup"
+author: "Leon"
+date: "Saturday, March 21, 2015"
+output: html_document
+---
+
+#Introduction
+It is now possible to collect a large amount of data about personal activity
+relatively inexpensively Using devices such as Jawbone Up, Nike FuelBand, and
+Fitbit.
+
+In this dataset, six young health participants with 4 accelerometed on:
+
+    1. Belt
+    
+    2. Forearm
+    
+    3. Arm
+    
+    4. Dumbell
+
+were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions:
+
+    Class A: exactly according to the specification
+    
+    Class B: throwing the elbows to the front
+    
+    Class C: lifting the dumbbell only halfway
+
+    Class D: lowering the dumbbell only halfway
+
+    Class E: throwing the hips to the front
+
+Read more on Weight Lifting Exercises Dataset: http://groupware.les.inf.puc-rio.br/har#ixzz3Uyx7PVRk
+
+```{r setup, message=FALSE, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+#############
+## Library ##
+#############
+library(caret)
+library(randomForest)
+```
+
+#Loading the Data and Exploration
+```{r}
+########################
+## Load training data ##
+########################
+training_org = read.csv(".\\pml-training.csv")
+
+summary(training_org)
+head(training_org)
+```
+
+From the exploration, we can see that there are a total of `r ncol(training_org)` columns:
+
+1. Column X is just a row counter.
+2. Column user_name identifies the individual performing the task but We are not identifying these individual in this prediction exercise.
+3. There are THREE time stamp columns which is not important in a weight lifting activity.
+4. The TWO window related columns are identifier of reps and counter, and is irrelevent in this prediction exercise.
+5. There are a lot of blank and NA columns providing measurements for stddev, avg, max, min, var, kurtosis, skewness, amplitude.
+
+#Data Cleansing
+We would clean up the data set by removing these columns identified in the data exploration.
+```{r}
+#set.seed(2);
+#trainingFOLD = createFolds(y=training_org$classe, k=4, list=T)
+### we only use 1 of the 5 folds created, 20%
+#training_org = training_org[trainingFOLD[[1]],]
+
+###################
+## data cleaning ##
+###################
+
+training = training_org[, -grep("X|user_name|timestamp|window|stddev|avg|max|min|var|kurtosis|skewness|amplitude", colnames(training_org))]
+
+summary(training)
+head(training)
+```
+We are left with `r ncol(training)` columns from the original `r ncol(training_org)` columns.
+
+#Data Partitioning and Training
+We now use a 80/20 ratio to split the data into training and testing data.
+```{r}
+###################################
+## partitioning the training set ##
+###################################
+## create a training(80%) testing(20%) partition
+set.seed(2);
+inTrain = createDataPartition(y=training$classe,p=0.8,list=F)
+training = training[inTrain,]
+testing = training[-inTrain,]
+```
+We have `r nrow(training)` rows in the training set, and `r nrow(testing)` rows in the in-sample testing set.
+
+#Fitting the Model
+We use the randomForest model in this exercise.
+```{r}
+###################
+## fit the model ##
+###################
+# Random Forest
+fitRF = randomForest(classe~. , data=training , importance = T)
+
+#############################################
+## cross validate with in-sample test data ##
+#############################################
+predictRF  = predict(fitRF, testing)
+
+###########################
+## check confusionmatrix ##
+###########################
+MatrixRF = confusionMatrix(predictRF, testing$classe)
+
+print(MatrixRF)
+```
+This training model gives us a 100% Accuracy.
+
+#Prediction
+With a 100% accuracy from the in-sample testing, we proceed with predicting the actual test data.
+```{r}
+########################
+## predict the result ##
+########################
+testing_org = read.csv(".\\pml-testing.csv")
+predict_test = predict(fitRF, testing_org)
+
+print(predict_test)
+```
+The results were all correct.
+
+```{r}
+######################
+## write the result ##
+######################
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predict_test)
+```
+
+#Further testing
+For the purpose of further testing, we do a varImpPlot of the randomForest model.
+```{r}
+varImpPlot(fitRF, sort = T)
+```
+
+We see that the top 4 Important features in MeanDecreaseAccuracy and MeanDecreaseGini are "yaw_belt", "roll_belt", "magnet_dumbbell_z", "pitch_belt".
+
+A model using only these 4 features were trained, and use to predict the result.
+
+```{r}
+trainingVIP = training_org[, c("yaw_belt","roll_belt","magnet_dumbbell_z","pitch_belt","classe")]
+
+# Random Forest
+fitRFVIP = randomForest(classe~. , data=trainingVIP , importance = T)
+
+#############################################
+## cross validate with in-sample test data ##
+#############################################
+predictRFVIP  = predict(fitRFVIP, testing)
+
+###########################
+## check confusionmatrix ##
+###########################
+MatrixRFVIP = confusionMatrix(predictRFVIP, testing$classe)
+
+print(MatrixRF)
+
+print(predict_test)
+print(predict(fitRFVIP, testing_org))
+```
+
+They are matching.
